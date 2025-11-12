@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Protein Explorer</title>
+    <!-- 1. Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 
+      2. NGL Viewer library for 3D visualization. 
+      Updated to the specific version requested.
+    -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ngl/2.4.0/ngl.js"></script>
+    <style>
+        /* Custom style for the NGL viewport */
+        #viewport {
+            width: 100%;
+            height: 500px;
+            position: relative;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans text-gray-800">
+
+    <div class="container mx-auto p-4 md:p-8">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-blue-700">🧬 3D Protein Explorer</h1>
+            <p class="text-lg text-gray-600 mt-2">Search for a protein by its PDB ID to visualize its structure and data.</p>
+        </header>
+
+        <!-- Search Bar -->
+        <div class="max-w-xl mx-auto flex gap-2 mb-6">
+            <input type="text" id="pdbInput" class="flex-grow w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Enter PDB ID (e.g., 1TIM, 6M0J, 2HHB)">
+            <button id="searchBtn" class="px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition duration-200">
+                Search
+            </button>
+        </div>
+
+        <!-- Status Messages -->
+        <div id="statusMessages" class="text-center mb-6">
+            <div id="loading" class="hidden text-lg text-blue-600 font-medium">
+                <span class="inline-block animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-blue-600 mr-2"></span>
+                Fetching protein data...
+            </div>
+            <div id="error" class="hidden text-lg text-red-600 font-semibold p-3 bg-red-100 rounded-lg"></div>
+        </div>
+
+        <!-- Results Section -->
+        <div id="results" class="hidden grid grid-cols-1 lg:grid-cols-5 gap-6">
+
+            <!-- Column 1: Information -->
+            <div class="lg:col-span-2 bg-white p-6 rounded-lg shadow-lg overflow-hidden">
+                <h2 id="proteinName" class="text-2xl font-bold text-gray-900 mb-2"></h2>
+                <h3 id="pdbTitle" class="text-md font-medium text-gray-600 mb-4"></h3>
+
+                <!-- Function/Abstract -->
+                <div class="mb-4">
+                    <h4 class="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">Function (Abstract)</h4>
+                    <p id="proteinAbstract" class="text-sm text-gray-700 max-h-48 overflow-y-auto bg-gray-50 p-3 rounded-md"></p>
+                </div>
+
+                <!-- Domains -->
+                <div class="mb-4">
+                    <h4 class="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">Domains & Annotations</h4>
+                    <ul id="proteinDomains" class="list-disc list-inside text-sm text-gray-700 max-h-48 overflow-y-auto space-y-1 bg-gray-50 p-3 rounded-md">
+                        <!-- Domains will be populated here -->
+                    </ul>
+                </div>
+
+                <!-- Sequence -->
+                <div>
+                    <h4 class="text-lg font-semibold text-gray-800 border-b pb-1 mb-2">Sequence (Entity 1)</h4>
+                    <pre id="proteinSequence" class="text-xs font-mono p-3 bg-gray-900 text-green-400 rounded-md max-h-60 overflow-y-auto whitespace-pre-wrap break-words"></pre>
+                </div>
+            </div>
+
+            <!-- Column 2: 3D Viewer -->
+            <div class="lg:col-span-3 bg-white p-6 rounded-lg shadow-lg">
+                <h2 class="text-2xl font-bold text-gray-900 mb-4 text-center">3D Structure Viewer</h2>
+                
+                <!-- Viewer Controls -->
+                <div class="flex flex-wrap justify-center gap-2 mb-4">
+                    <button data-repr="cartoon" class="repr-btn px-4 py-2 bg-blue-100 text-blue-800 font-medium rounded-lg hover:bg-blue-200 transition duration-150 text-sm">Cartoon</button>
+                    <button data-repr="surface" class="repr-btn px-4 py-2 bg-gray-100 text-gray-800 font-medium rounded-lg hover:bg-gray-200 transition duration-150 text-sm">Surface</button>
+                    <button data-repr="ball+stick" class="repr-btn px-4 py-2 bg-gray-100 text-gray-800 font-medium rounded-lg hover:bg-gray-200 transition duration-150 text-sm">Ball & Stick</button>
+                    <button data-repr="spacefill" class="repr-btn px-4 py-2 bg-gray-100 text-gray-800 font-medium rounded-lg hover:bg-gray-200 transition duration-150 text-sm">Spacefill</button>
+                    <button id="spinBtn" class="px-4 py-2 bg-green-100 text-green-800 font-medium rounded-lg hover:bg-green-200 transition duration-150 text-sm">Spin</button>
+                </div>
+
+                <!-- NGL Viewport -->
+                <div id="viewport" class="border border-gray-300 rounded-lg"></div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // Wait for the DOM to be fully loaded and parsed.
+        // This ensures that all elements are available and deferred scripts (like NGL.js) have executed.
+        window.addEventListener('DOMContentLoaded', () => {
+            
+            // DOM Elements
+            const pdbInput = document.getElementById('pdbInput');
+            const searchBtn = document.getElementById('searchBtn');
+            const resultsEl = document.getElementById('results');
+            const loadingEl = document.getElementById('loading');
+            const errorEl = document.getElementById('error');
+            const viewportEl = document.getElementById('viewport');
+
+            // Info Elements
+            const proteinNameEl = document.getElementById('proteinName');
+            const pdbTitleEl = document.getElementById('pdbTitle');
+            const proteinAbstractEl = document.getElementById('proteinAbstract');
+            const proteinDomainsEl = document.getElementById('proteinDomains');
+            const proteinSequenceEl = document.getElementById('proteinSequence');
+
+            // 3D Viewer Elements
+            const reprButtons = document.querySelectorAll('.repr-btn');
+            const spinBtn = document.getElementById('spinBtn');
+
+            // NGL Viewer State
+            let nglStage = null;
+            let proteinComponent = null;
+            let isSpinning = false;
+
+            // Handle window resizing for NGL
+            window.addEventListener("resize", () => {
+                if (nglStage) {
+                    nglStage.handleResize();
+                }
+            }, false);
+
+            // --- Event Listeners ---
+            
+            // Search on button click
+            searchBtn.addEventListener('click', handleSearch);
+            // Search on Enter key press
+            pdbInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    handleSearch();
+                }
+            });
+
+            // Representation toggle buttons
+            reprButtons.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const representation = btn.dataset.repr;
+                    setRepresentation(representation);
+                    // Update button active state
+                    reprButtons.forEach(b => b.classList.replace('bg-blue-100', 'bg-gray-100'));
+                    btn.classList.replace('bg-gray-100', 'bg-blue-100');
+                });
+            });
+
+            // Spin button
+            spinBtn.addEventListener('click', toggleSpin);
+
+            // --- Core Functions ---
+
+            /**
+             * Handles the search initiation.
+             */
+            async function handleSearch() {
+                // Check if NGL library is loaded
+                // The NGL script is now blocking in the <head>, so 'NGL' should be defined 
+                // by the time DOMContentLoaded fires.
+                if (typeof NGL === 'undefined') {
+                    showError("NGL library failed to load. Please check your network or try reloading.");
+                    console.error("NGL object is not defined. Script may be blocked or failed to load.");
+                    return;
+                }
+
+                const pdbId = pdbInput.value.trim().toUpperCase();
+                if (!pdbId) {
+                    showError("Please enter a PDB ID.");
+                    return;
+                }
+
+                // Reset UI
+                showLoading(true);
+                showError(null);
+                resultsEl.classList.add('hidden');
+                
+                // Clear previous NGL stage
+                if (nglStage) {
+                    nglStage.dispose();
+                    nglStage = null;
+                    proteinComponent = null;
+                }
+                // Explicitly clear the viewport container of any old canvas
+                viewportEl.innerHTML = '';
+
+                try {
+                    // Fetch data in parallel
+                    const [entryData, entityData] = await Promise.all([
+                        fetchEntryData(pdbId),
+                        fetchEntityData(pdbId)
+                    ]);
+
+                    // Render all data
+                    renderInfo(entryData, entityData);
+                    renderDomains(entityData.rcsb_polymer_entity_annotation);
+                    renderSequence(entityData.entity_poly.pdbx_seq_one_letter_code_can);
+                    
+                    // Show results FIRST, so the viewport div is visible
+                    resultsEl.classList.remove('hidden');
+
+                    // Initialize NGL viewer AFTER its container is visible
+                    initNGL(pdbId);
+
+                } catch (err) {
+                    console.error("Search failed:", err);
+                    showError(err.message || "Could not find protein data. Please check the PDB ID.");
+                } finally {
+                    showLoading(false);
+                }
+            }
+
+            /**
+             * Fetches general entry data (title, abstract) from RCSB.
+             */
+            async function fetchEntryData(pdbId) {
+                // Use v1 API for stability
+                const url = `https://data.rcsb.org/rest/v1/core/entry/${pdbId}`;
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`Entry data not found for ${pdbId}`);
+                return await response.json();
+            }
+
+            /**
+             * Fetches polymer entity data (name, sequence, domains) from RCSB.
+             * We default to entity '1', which is standard for simple proteins.
+             */
+            async function fetchEntityData(pdbId) {
+                // Use v1 API for stability
+                const url = `https://data.rcsb.org/rest/v1/core/polymer_entity/${pdbId}/1`;
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`Polymer entity '1' not found for ${pdbId}`);
+                return await response.json();
+            }
+
+            // --- Render Functions ---
+
+            /**
+             * Populates the information text fields.
+             */
+            function renderInfo(entry, entity) {
+                proteinNameEl.textContent = entity.rcsb_polymer_entity.pdbx_description || "N/A";
+                pdbTitleEl.textContent = entry.struct.title || "N/A";
+                // v1 API uses 'abstract' field
+                proteinAbstractEl.textContent = entry.rcsb_entry_info.abstract || "No abstract available.";
+            }
+
+            /**
+             * Renders the list of domains and annotations.
+             */
+            function renderDomains(annotations) {
+                proteinDomainsEl.innerHTML = ""; // Clear previous
+                if (!annotations || annotations.length === 0) {
+                    proteinDomainsEl.innerHTML = "<li>No domain annotations found.</li>";
+                    return;
+                }
+
+                const filteredDomains = annotations.filter(
+                    ann => (ann.type === "Pfam" || ann.type === "CATH" || ann.type === "SCOP") && ann.annotation_lineage
+                );
+
+                if (filteredDomains.length === 0) {
+                    proteinDomainsEl.innerHTML = "<li>No Pfam, CATH, or SCOP domains found.</li>";
+                    return;
+                }
+
+                filteredDomains.forEach(ann => {
+                    const li = document.createElement('li');
+                    const positions = ann.annotation_lineage
+                        .map(line => `(Residues ${line.beg_seq_id} - ${line.end_seq_id})`)
+                        .join(', ');
+                    
+                    li.textContent = `${ann.name || ann.annotation_id} [${ann.type}] ${positions}`;
+                    proteinDomainsEl.appendChild(li);
+                });
+            }
+
+            /**
+             * Renders the protein sequence with line breaks.
+             */
+            function renderSequence(sequence) {
+                if (!sequence) {
+                    proteinSequenceEl.textContent = "Sequence not available.";
+                    return;
+                }
+                // Add line breaks every 60 characters for readability
+                const formattedSequence = sequence.match(/.{1,60}/g).join('\n');
+                proteinSequenceEl.textContent = formattedSequence;
+            }
+
+            // --- NGL Viewer Functions ---
+
+            /**
+             * Initializes the NGL stage and loads the protein.
+             */
+            function initNGL(pdbId) {
+                // NGL is checked in handleSearch, so it should be defined here
+                nglStage = new NGL.Stage(viewportEl);
+                nglStage.setParameters({ backgroundColor: "white" });
+
+                // Handle window resizing - MOVED to top level
+                /*
+                window.addEventListener("resize", () => {
+                    if (nglStage) nglStage.handleResize();
+                }, false);
+                */
+
+                // Use the full URL for the .cif file for more reliability
+                const fileUrl = `https://files.rcsb.org/download/${pdbId}.cif`;
+
+                nglStage.loadFile(fileUrl, { defaultRepresentation: false })
+                    .then(component => {
+                        proteinComponent = component;
+                        // Add default representation
+                        setRepresentation('cartoon');
+                        // Set active button
+                        reprButtons.forEach(b => b.classList.replace('bg-blue-100', 'bg-gray-100'));
+                        document.querySelector('.repr-btn[data-repr="cartoon"]').classList.replace('bg-gray-100', 'bg-blue-100');
+                        
+                        nglStage.autoView();
+                        // Manually trigger resize after autoView to ensure canvas is sized
+                        nglStage.handleResize();
+                    })
+                    .catch(err => {
+                        console.error("NGL Error:", err);
+                        showError("Could not load 3D structure.");
+                    });
+            }
+
+            /**
+             * Sets the representation (cartoon, surface, etc.)
+             */
+            function setRepresentation(reprName) {
+                if (!proteinComponent) return;
+
+                // Clear all previous representations
+                proteinComponent.removeAllRepresentations();
+
+                // Add the new one
+                switch (reprName) {
+                    case 'cartoon':
+                        proteinComponent.addRepresentation("cartoon", { color: "residueindex" });
+                        break;
+                    case 'surface':
+                        proteinComponent.addRepresentation("surface", { 
+                            surfaceType: "ms", 
+                            color: "element", 
+                            opacity: 0.8 
+                        });
+                        break;
+                    case 'ball+stick':
+                        proteinComponent.addRepresentation("ball+stick", { multipleBond: "symmetric" });
+                        break;
+                    case 'spacefill':
+                        proteinComponent.addRepresentation("spacefill", { color: "element" });
+                        break;
+                }
+            }
+
+            /**
+             * Toggles the spinning animation of the 3D model.
+             */
+            function toggleSpin() {
+                if (!nglStage) return;
+
+                isSpinning = !isSpinning;
+                if (isSpinning) {
+                    // Use stage.setSpin([axis], speed) to start spinning
+                    nglStage.setSpin([0, 1, 0], 0.01);
+                    spinBtn.textContent = "Stop Spin";
+                    spinBtn.classList.replace('bg-green-100', 'bg-yellow-100');
+                    spinBtn.classList.replace('text-green-800', 'text-yellow-800');
+                } else {
+                    // Use stage.setSpin(false) to stop spinning
+                    nglStage.setSpin(false);
+                    spinBtn.textContent = "Spin";
+                    spinBtn.classList.replace('bg-yellow-100', 'bg-green-100');
+                    spinBtn.classList.replace('text-yellow-800', 'text-green-800');
+                }
+            }
+
+            // --- UI Helper Functions ---
+
+            function showLoading(isLoading) {
+                loadingEl.classList.toggle('hidden', !isLoading);
+            }
+
+            function showError(message) {
+                if (message) {
+                    errorEl.textContent = message;
+                    errorEl.classList.remove('hidden');
+                } else {
+                    errorEl.classList.add('hidden');
+                }
+            }
+        }); // End of DOMContentLoaded listener
+    </script>
+</body>
+</html>
