@@ -29,6 +29,9 @@ This is a single-file application. No build step or server is required.
 2.  **Open in Browser:** Open the `protein_explorer.html` file in any modern web browser (like Chrome, Firefox, or Edge).
 3.  **Search:** Type a PDB ID into the search bar (e.g., `1TIM`) and press "Search" or hit Enter.
 
+## Demo Link
+https://swapnilgopale.github.io/3D-Protein-Explorer/
+
 ## 🛠️ Technologies Used
 
 * **HTML5**
@@ -40,3 +43,4 @@ This is a single-file application. No build step or server is required.
 ## Data Source
 
 This project relies on the free and open APIs provided by the **RCSB Protein Data Bank (PDB)**. All protein data and structure files are sourced from them.
+
